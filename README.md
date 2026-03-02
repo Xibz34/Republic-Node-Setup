@@ -1,4 +1,25 @@
+## Table of Contents
+
+- [System Requirements](#system-requirements)
+- [Variables](#0-variables)
+- [Installation](#1-install-dependencies)
+- [Initialize Node](#3-initialize-node)
+- [State Sync](#6-optional-state-sync-fast-sync)
+- [Firewall](#9-firewall-ufw-recommended)
+- [Validator Operations](#validator-operations)
+- [Advanced Validator Operations](#advanced-validator-operations)
+- [Monitoring Integration](#monitoring-integration-validator-monitoring-suite)
+- [Architecture](#architecture-monitoring--node)
+- [Production Sentry Architecture](#production-sentry-architecture)
+
+---
+
 # Republic Node Setup (Testnet)
+
+![OS](https://img.shields.io/badge/OS-Ubuntu_22.04+-blue)
+![Cosmos SDK](https://img.shields.io/badge/Cosmos-SDK-green)
+![Monitoring](https://img.shields.io/badge/Monitoring-Integrated-orange)
+![Security](https://img.shields.io/badge/Security-Sentry_Ready-red)
 
 Production-ready Republic node setup with systemd, state sync, firewall configuration and operational checks.
 
@@ -704,7 +725,7 @@ $BINARY query slashing signing-info \
 - Separate sentry and validator nodes
 - Document incidents and update runbooks
 
-
+---
 
 ## Operational Best Practices
 
@@ -714,7 +735,21 @@ $BINARY query slashing signing-info \
 - Rotate keys securely if required
 - Maintain proper backups (offline only)
 
+---
 
+# Operational Maturity
+
+This setup follows production-grade principles:
+
+- Infrastructure isolation (sentry model)
+- Automated health monitoring
+- Controlled validator lifecycle management
+- Incident documentation discipline
+- Security-first deployment model
+
+This repository is part of a broader validator infrastructure stack.
+
+---
 
 # Disclaimer
 
