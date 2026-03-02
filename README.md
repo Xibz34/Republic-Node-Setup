@@ -222,6 +222,105 @@ For production monitoring:
 
 ---
 
+# Validator Operations
+
+⚠ Never store mnemonics or private keys on a public VPS.
+
+## Create Wallet
+
+```bash
+$BINARY keys add wallet
+```
+
+Recover existing wallet:
+
+```bash
+$BINARY keys add wallet --recover
+```
+
+Show address:
+
+```bash
+$BINARY keys show wallet -a
+```
+
+---
+
+## Create Validator
+
+After funding your wallet:
+
+```bash
+$BINARY tx staking create-validator \
+  --amount 1000000utoken \
+  --pubkey $($BINARY tendermint show-validator) \
+  --moniker "Xibz" \
+  --chain-id $CHAIN_ID \
+  --commission-rate "0.05" \
+  --commission-max-rate "0.20" \
+  --commission-max-change-rate "0.01" \
+  --min-self-delegation "1" \
+  --gas auto \
+  --gas-adjustment 1.3 \
+  --gas-prices 0.025utoken \
+  --from wallet \
+  -y
+```
+
+> Replace `utoken` with the correct staking denom.
+
+---
+
+## Check Validator Status
+
+```bash
+$BINARY query staking validator $($BINARY keys show wallet --bech val -a)
+```
+
+Check jailed status:
+
+```bash
+$BINARY query staking validator <your_valoper_address> | jq '.jailed'
+```
+
+---
+
+## Unjail Validator
+
+If jailed due to missed blocks:
+
+```bash
+$BINARY tx slashing unjail \
+  --from wallet \
+  --chain-id $CHAIN_ID \
+  --gas auto \
+  --gas-adjustment 1.3 \
+  --gas-prices 0.025utoken \
+  -y
+```
+
+---
+
+## Check Missed Blocks
+
+```bash
+$BINARY query slashing signing-info \
+  $($BINARY tendermint show-validator) \
+  --chain-id $CHAIN_ID
+```
+
+---
+
+## Operational Best Practices
+
+- Monitor missed blocks continuously
+- Alert on jailed status
+- Keep commission transparent
+- Rotate keys securely if required
+- Maintain proper backups (offline only)
+
+
+
 # Disclaimer
 
 Use at your own risk. Always verify chain parameters from official sources.
