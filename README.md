@@ -222,6 +222,225 @@ For production monitoring:
 
 ---
 
+# Architecture (Monitoring + Node)
+
+```mermaid
+flowchart TB
+  subgraph VPS["VPS / Host"]
+    R[Republic Node<br/>republicd.service]
+    RPC[(Local RPC<br/>127.0.0.1:26657)]
+    LOGS[(Logs<br/>journalctl)]
+    MON[Validator Monitoring Suite<br/>run/run_all.sh]
+    ENV[Local Config<br/>config/common.env]
+  end
+
+  DISCORD[(Discord Webhook<br/>Alerts)]
+
+  R --> RPC
+  R --> LOGS
+  ENV --> MON
+  MON --> RPC
+  MON --> DISCORD
+
+  style R fill:#f6f6f6,stroke:#333,stroke-width:1px
+  style MON fill:#f6f6f6,stroke:#333,stroke-width:1px
+  style DISCORD fill:#f6f6f6,stroke:#333,stroke-width:1px
+```
+
+**Flow:**
+- `republicd` runs as a `systemd` service and exposes a **local** RPC endpoint.
+- Monitoring reads health via RPC + service status.
+- On failure, a Discord alert is sent via webhook.
+
+---
+
+# Production Sentry Architecture
+
+```mermaid
+flowchart TB
+  INTERNET((Public Internet))
+
+  subgraph SENTRY_LAYER["Public Sentry Layer"]
+    S1[Sentry Node A<br/>Public P2P]
+    S2[Sentry Node B<br/>Public P2P]
+  end
+
+  subgraph PRIVATE_LAYER["Private Validator Layer"]
+    VAL[Validator Node<br/>No Public P2P]
+    RPC[(Local RPC<br/>127.0.0.1)]
+    MON[Monitoring Suite]
+  end
+
+  DISCORD[(Discord Alerts)]
+
+  INTERNET --> S1
+  INTERNET --> S2
+
+  S1 --> VAL
+  S2 --> VAL
+
+  VAL --> RPC
+  MON --> RPC
+  MON --> DISCORD
+
+  style VAL fill:#f6f6f6,stroke:#333,stroke-width:1px
+  style S1 fill:#f6f6f6,stroke:#333,stroke-width:1px
+  style S2 fill:#f6f6f6,stroke:#333,stroke-width:1px
+  style MON fill:#f6f6f6,stroke:#333,stroke-width:1px
+```
+
+## Design Principles
+
+- Validator node is **not publicly exposed**
+- Only sentries accept public P2P traffic
+- Validator peers only with sentries
+- RPC remains local/private
+- Monitoring reads local RPC
+- Alerts are sent externally via webhook
+
+## Security Benefits
+
+- Reduced DDoS surface
+- Isolation of signing key
+- Controlled peer topology
+- Cleaner incident boundaries
+
+---
+
+# Monitoring Integration (validator-monitoring-suite)
+
+This setup is designed to plug into my monitoring framework:
+
+- **validator-monitoring-suite** (multi-network checks + Discord alerts)
+
+## 1) Install monitoring suite
+
+```bash
+cd $HOME
+git clone https://github.com/Xibz34/validator-monitoring-suite.git
+cd validator-monitoring-suite
+```
+
+## 2) Create local config (DO NOT COMMIT)
+
+```bash
+cp config/common.env.example config/common.env
+nano config/common.env
+```
+
+Fill at minimum:
+
+- `DISCORD_WEBHOOK_URL`
+- `REPUBLIC_RPC` (example: `http://127.0.0.1:26657`)
+- `REPUBLIC_SERVICE` (example: `republicd`)
+- `REPUBLIC_CHAIN_BINARY` (example: `republicd`)
+- `REPUBLIC_CHAIN_ID` (example: `raitestnet_77701-1`)
+- `REPUBLIC_VALOPER` (your valoper address)
+
+## 3) Make scripts executable
+
+```bash
+chmod +x lib/*.sh checks/*.sh run/*.sh
+```
+
+## 4) Run a manual check
+
+```bash
+CONFIG_FILE=./config/common.env ./run/run_all.sh
+```
+
+If a check fails, you will receive a Discord alert.
+
+## 5) Cron (run every 5 minutes)
+
+```bash
+crontab -e
+```
+
+Add:
+
+```cron
+*/5 * * * * /bin/bash -lc 'cd $HOME/validator-monitoring-suite && CONFIG_FILE=./config/common.env ./run/run_all.sh >> $HOME/validator-monitoring.log 2>&1'
+```
+
+## Notes
+
+- Keep `config/common.env` local (it should be ignored via `.gitignore`)
+- Prefer using `http://127.0.0.1:26657` for local RPC checks
+- Do not expose RPC publicly unless you must
+
+---
+
+## Quick Setup (Safe One-Block Installation)
+
+The following block installs and prepares the monitoring suite without executing remote scripts.
+
+```bash
+# 1️⃣ Clone repository
+cd $HOME
+git clone https://github.com/Xibz34/validator-monitoring-suite.git
+
+# 2️⃣ Enter directory
+cd validator-monitoring-suite
+
+# 3️⃣ Create local config
+cp config/common.env.example config/common.env
+
+# 4️⃣ Edit config manually (required)
+nano config/common.env
+```
+
+Fill at minimum:
+
+```
+DISCORD_WEBHOOK_URL=
+REPUBLIC_RPC=http://127.0.0.1:26657
+REPUBLIC_SERVICE=republicd
+REPUBLIC_CHAIN_BINARY=republicd
+REPUBLIC_CHAIN_ID=raitestnet_77701-1
+REPUBLIC_VALOPER=
+```
+
+Then:
+
+```bash
+# 5️⃣ Make scripts executable
+chmod +x lib/*.sh checks/*.sh run/*.sh
+
+# 6️⃣ Run manual test
+CONFIG_FILE=./config/common.env ./run/run_all.sh
+```
+
+If everything is configured correctly:
+
+- No output → All checks passed
+- Discord alert → Something failed
+
+---
+
+## Optional: Cron (Every 5 Minutes)
+
+```bash
+crontab -e
+```
+
+Add:
+
+```cron
+*/5 * * * * /bin/bash -lc 'cd $HOME/validator-monitoring-suite && CONFIG_FILE=./config/common.env ./run/run_all.sh >> $HOME/validator-monitoring.log 2>&1'
+```
+
+---
+
+### Why This Approach?
+
+- No remote script execution
+- No hidden commands
+- Fully auditable installation
+- Production-friendly setup
+
+---
+
 # Validator Operations
 
 ⚠ Never store mnemonics or private keys on a public VPS.
@@ -310,6 +529,182 @@ $BINARY query slashing signing-info \
 ```
 
 ---
+---
+
+# Advanced Validator Operations
+
+## 1) Auto-Unjail (Safe & Rate-Limited)
+
+⚠ This script does NOT solve slashing risks.  
+Always fix the root cause (peering, CPU, disk, network) before relying on automation.
+
+### Script: `scripts/auto_unjail.sh`
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ===== Required environment variables =====
+: "${BINARY:?missing BINARY}"
+: "${CHAIN_ID:?missing CHAIN_ID}"
+: "${WALLET:?missing WALLET}"
+: "${GAS_PRICES:?missing GAS_PRICES}"
+
+# Safety switch (must be explicitly enabled)
+ENABLE_AUTO_UNJAIL="${ENABLE_AUTO_UNJAIL:-false}"
+if [[ "$ENABLE_AUTO_UNJAIL" != "true" ]]; then
+  echo "AUTO_UNJAIL disabled (set ENABLE_AUTO_UNJAIL=true)"
+  exit 0
+fi
+
+NODE_ARG=()
+if [[ -n "${NODE:-}" ]]; then
+  NODE_ARG=(--node "$NODE")
+fi
+
+VALOPER="$($BINARY keys show "$WALLET" --bech val -a)"
+if [[ -z "$VALOPER" ]]; then
+  echo "Could not resolve valoper address for wallet=$WALLET"
+  exit 1
+fi
+
+JAILED="$($BINARY query staking validator "$VALOPER" "${NODE_ARG[@]}" -o json 2>/dev/null | jq -r '.jailed // empty' || true)"
+if [[ "$JAILED" != "true" ]]; then
+  echo "Validator is not jailed (jailed=$JAILED)"
+  exit 0
+fi
+
+echo "Validator is JAILED → attempting unjail..."
+
+$BINARY tx slashing unjail \
+  --from "$WALLET" \
+  --chain-id "$CHAIN_ID" \
+  --gas auto \
+  --gas-adjustment 1.3 \
+  --gas-prices "$GAS_PRICES" \
+  "${NODE_ARG[@]}" \
+  -y
+
+echo "Unjail transaction broadcasted. Verify status shortly."
+```
+
+Make it executable:
+
+```bash
+chmod +x scripts/auto_unjail.sh
+```
+
+### Cron Example (Every 10 Minutes)
+
+```bash
+crontab -e
+```
+
+Add:
+
+```cron
+*/10 * * * * /bin/bash -lc 'cd $HOME/Republic-Node-Setup && BINARY=republicd CHAIN_ID=raitestnet_77701-1 WALLET=wallet GAS_PRICES=0.025utoken ENABLE_AUTO_UNJAIL=true ./scripts/auto_unjail.sh >> $HOME/auto_unjail.log 2>&1'
+```
+
+---
+
+## 2) Update Commission
+
+Check current commission:
+
+```bash
+$BINARY query staking validator $($BINARY keys show wallet --bech val -a) -o json | jq '.commission'
+```
+
+Update commission rate:
+
+```bash
+$BINARY tx staking edit-validator \
+  --commission-rate "0.06" \
+  --from wallet \
+  --chain-id $CHAIN_ID \
+  --gas auto \
+  --gas-adjustment 1.3 \
+  --gas-prices 0.025utoken \
+  -y
+```
+
+> Commission change limits depend on chain parameters.
+
+---
+
+## 3) Increase Self-Delegation
+
+Delegate additional tokens:
+
+```bash
+VALOPER="$($BINARY keys show wallet --bech val -a)"
+
+$BINARY tx staking delegate \
+  "$VALOPER" \
+  1000000utoken \
+  --from wallet \
+  --chain-id $CHAIN_ID \
+  --gas auto \
+  --gas-adjustment 1.3 \
+  --gas-prices 0.025utoken \
+  -y
+```
+
+---
+
+## 4) Sentry Architecture & Remote Signer (High-Level)
+
+Recommended production architecture:
+
+- Public **sentry nodes** handle external P2P traffic
+- The **validator node remains private**
+- Validator peers only with sentry nodes (private networking or IP allowlist)
+
+Security recommendations:
+
+- Never expose validator RPC publicly
+- Consider remote signer setups (e.g., TMKMS / Horcrux)
+- Keep validator keys offline when possible
+- Restrict access to `priv_validator_key.json`
+- Maintain secure offline backups
+
+---
+
+## 5) Useful Operational Commands
+
+Show validator address:
+
+```bash
+$BINARY keys show wallet --bech val -a
+```
+
+Show consensus public key:
+
+```bash
+$BINARY tendermint show-validator
+```
+
+Check signing info (missed blocks):
+
+```bash
+$BINARY query slashing signing-info \
+  $($BINARY tendermint show-validator) \
+  --chain-id $CHAIN_ID \
+  -o json | jq
+```
+
+---
+
+## 6) Production Best Practices
+
+- Monitor jailed status and missed blocks
+- Set alerts for height lag
+- Keep RPC private (allowlist if required)
+- Separate sentry and validator nodes
+- Document incidents and update runbooks
+
+
 
 ## Operational Best Practices
 
