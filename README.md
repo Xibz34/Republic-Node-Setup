@@ -1,19 +1,8 @@
 # Republic Node Setup (Testnet)
 
-Production-ready setup guide for running a Republic node with `systemd`, safe defaults, and post-install checks.
+Production-ready Republic node setup with systemd, state sync, firewall configuration and operational checks.
 
-Maintained by **Xibz** — independent infrastructure operator focused on monitoring, reliability, and operational maturity.
-
----
-
-## What you get
-
-- Clean install steps (deps → binary → init → genesis)
-- systemd service template (non-root)
-- Sync / health verification commands
-- Practical operational notes
-
-> Always verify chain parameters (chain-id, seeds, genesis) from official Republic documentation.
+Maintained by **Xibz** — infrastructure operator focused on monitoring, reliability and security-first deployments.
 
 ---
 
@@ -28,9 +17,9 @@ Maintained by **Xibz** — independent infrastructure operator focused on monito
 
 ---
 
-## 0) Set Variables
+# 0) Variables
 
-Update according to official documentation:
+Update according to official Republic documentation.
 
 ```bash
 export CHAIN_ID="raitestnet_77701-1"
@@ -45,24 +34,24 @@ export PEERS=""
 
 ---
 
-## 1) Install Dependencies
+# 1) Install Dependencies
 
 ```bash
 sudo apt update -y
-sudo apt install -y curl jq git build-essential
+sudo apt install -y curl jq git build-essential ufw
 ```
 
 ---
 
-## 2) Install Binary
+# 2) Install Binary
 
-Follow the official Republic repository instructions.
+Follow official Republic repository instructions.
 
-Example pattern:
+Example:
 
 ```bash
-# git clone <REPUBLIC_REPO>
-# cd <REPUBLIC_REPO>
+# git clone <REPO>
+# cd <REPO>
 # make install
 ```
 
@@ -75,7 +64,7 @@ $BINARY version
 
 ---
 
-## 3) Initialize Node
+# 3) Initialize Node
 
 ```bash
 $BINARY init "Xibz" --chain-id $CHAIN_ID
@@ -83,7 +72,7 @@ $BINARY init "Xibz" --chain-id $CHAIN_ID
 
 ---
 
-## 4) Download Genesis
+# 4) Download Genesis
 
 ```bash
 curl -L $GENESIS_URL -o $HOME_DIR/config/genesis.json
@@ -91,7 +80,7 @@ curl -L $GENESIS_URL -o $HOME_DIR/config/genesis.json
 
 ---
 
-## 5) Configure Seeds / Peers
+# 5) Configure Seeds / Peers
 
 Edit:
 
@@ -108,18 +97,40 @@ persistent_peers = "$PEERS"
 
 ---
 
-## 6) Create Dedicated User (Recommended)
+# 6) Optional: State Sync (Fast Sync)
+
+⚠ Always verify RPC servers are trustworthy.
+
+Example template:
+
+```bash
+SNAP_RPC="https://rpc.example.com:443"
+
+LATEST_HEIGHT=$(curl -s $SNAP_RPC/block | jq -r .result.block.header.height)
+BLOCK_HEIGHT=$((LATEST_HEIGHT - 2000))
+TRUST_HASH=$(curl -s "$SNAP_RPC/block?height=$BLOCK_HEIGHT" | jq -r .result.block_id.hash)
+
+sed -i.bak -e "s|^enable *=.*|enable = true|" \
+-e "s|^rpc_servers *=.*|rpc_servers = \"$SNAP_RPC,$SNAP_RPC\"|" \
+-e "s|^trust_height *=.*|trust_height = $BLOCK_HEIGHT|" \
+-e "s|^trust_hash *=.*|trust_hash = \"$TRUST_HASH\"|" \
+$HOME_DIR/config/config.toml
+```
+
+Restart node after enabling state sync.
+
+---
+
+# 7) Create Dedicated User
 
 ```bash
 sudo adduser --disabled-password --gecos "" validator
 sudo usermod -aG sudo validator
 ```
 
-(Optional: move node home directory under /home/validator)
-
 ---
 
-## 7) Create systemd Service
+# 8) systemd Service
 
 ```bash
 sudo nano /etc/systemd/system/republicd.service
@@ -158,9 +169,27 @@ sudo journalctl -u republicd -f --no-hostname
 
 ---
 
-## 8) Sync Check
+# 9) Firewall (UFW Recommended)
 
-Check sync status:
+Enable firewall:
+
+```bash
+sudo ufw allow ssh
+sudo ufw allow 26656/tcp
+sudo ufw enable
+```
+
+Optional (if RPC needed):
+
+```bash
+sudo ufw allow 26657/tcp
+```
+
+⚠ Do NOT expose RPC publicly unless required.
+
+---
+
+# 10) Sync Check
 
 ```bash
 curl -s localhost:26657/status | jq -r '.result.sync_info'
@@ -174,16 +203,17 @@ curl -s localhost:26657/status | jq -r '.result.sync_info.catching_up'
 
 ---
 
-## 9) Security Notes
+# 11) Operational Notes
 
-- Never commit private keys or mnemonics
-- Keep RPC private unless required
-- Use SSH keys, disable password login
-- Consider sentry architecture for public validators
+- Keep RPC private
+- Never store mnemonics on VPS
+- Monitor disk growth
+- Watch missed blocks
+- Implement monitoring (recommended)
 
 ---
 
-## Monitoring
+# Monitoring
 
 For production monitoring:
 
@@ -192,6 +222,6 @@ For production monitoring:
 
 ---
 
-## Disclaimer
+# Disclaimer
 
-Use at your own risk. Always verify parameters from official sources.
+Use at your own risk. Always verify chain parameters from official sources.
